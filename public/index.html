@@ -112,7 +112,7 @@ select:focus{border-color:var(--green)}
 .avoid-card{background:var(--bg2);border-radius:var(--radius);padding:.7rem .9rem;margin-bottom:.5rem;border-left:3px solid #e24b4a}
 .avoid-title{font-size:13px;font-weight:500;color:var(--red);margin-bottom:3px}
 .avoid-desc{font-size:12px;color:var(--text2);line-height:1.6}
-.saved-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1d9e75;color:#fff;padding:10px 20px;border-radius:20px;font-size:13px;font-weight:500;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
+.saved-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1d9e75;color:#fff;padding:12px 20px;border-radius:20px;font-size:13px;font-weight:500;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100;max-width:90%;text-align:center;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
 .saved-toast.show{opacity:1}
 </style>
 </head>
@@ -249,6 +249,15 @@ select:focus{border-color:var(--green)}
       <span><span class="ld" style="background:#d4537e"></span>Carboidratos (g) · pontilhado</span>
     </div>
     <div class="chart-wrap"><canvas id="chartHist" role="img" aria-label="Evolução do peso e carboidratos diários">Peso e carboidratos por dia</canvas></div>
+
+    <div class="card" id="analise-hist-card" style="display:none">
+      <div class="ch">
+        <span class="ct">Análise da semana com IA</span>
+        <button class="btn primary" onclick="analisarHistorico()" id="btn-analisar-hist">Analisar</button>
+      </div>
+      <div id="analise-hist-content"></div>
+    </div>
+
     <div class="card"><div class="ch"><span class="ct">Dias registrados</span></div><div id="hist-list"><div class="empty">Nenhum dia salvo ainda.</div></div></div>
   </div>
 
@@ -304,10 +313,10 @@ function gv(id){ return parseFloat(document.getElementById(id)?.value || 0) || 0
 function sv(id){ return document.getElementById(id)?.value || ''; }
 function setv(id, val){ const el = document.getElementById(id); if(el && val !== undefined && val !== null) el.value = val; }
 
-function showToast(msg){
+function showToast(msg, duration){
   const t = document.getElementById('toast');
   t.textContent = msg || 'Salvo!'; t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), duration || 2500);
 }
 
 document.getElementById('today-date').textContent = new Date().toLocaleDateString('pt-BR', {weekday:'long', day:'numeric', month:'long'});
@@ -453,13 +462,31 @@ async function saveDay(){
   const peso = parseFloat(document.getElementById('peso-hoje').value) || null;
   const today = new Date().toLocaleDateString('pt-BR');
   const day = { date: today, peso, cal: Math.round(tot.cal), c: parseFloat(tot.c.toFixed(1)), p: parseFloat(tot.p.toFixed(1)), g: parseFloat(tot.g.toFixed(1)), agua, foods: todayFoods };
+
   try { await fetch(API + '/api/days', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(day) }); } catch(e){}
+
   const existingIdx = savedDays.findIndex(d => d.date === today);
   if(existingIdx >= 0) savedDays[existingIdx] = day; else savedDays.push(day);
+
+  // Buscar feedback motivacional da IA
+  const mc = gv('cfg-carb') || 80, mcal = gv('cfg-cal') || 1600, mp = gv('cfg-prot') || 100, mg = gv('cfg-gord') || 80;
+  try {
+    const r = await fetch(API + '/api/feedback-dia', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ totals: tot, metas: { carb: mc, cal: mcal, prot: mp, gord: mg } })
+    });
+    const data = await r.json();
+    if(data.mensagem) {
+      showToast(data.mensagem, 4500);
+    }
+  } catch(e) {
+    showToast('Dia salvo!');
+  }
+
   todayFoods = []; agua = 0;
   document.getElementById('peso-hoje').value = '';
   renderFoods(); updateBars(); buildWater();
-  showToast('Dia salvo!');
 }
 
 async function deleteDay(date){
@@ -484,8 +511,10 @@ function renderHistorico(){
   if(!savedDays.length){
     document.getElementById('hist-metrics').innerHTML = '<div class="mc" style="grid-column:1/-1"><div class="ml">Aguardando</div><div class="mv" style="font-size:14px">Salve o primeiro dia</div></div>';
     document.getElementById('hist-list').innerHTML = '<div class="empty">Nenhum dia salvo ainda.</div>';
+    document.getElementById('analise-hist-card').style.display = 'none';
     return;
   }
+  document.getElementById('analise-hist-card').style.display = 'block';
   const perdeu = savedDays[0].peso && savedDays[savedDays.length-1].peso ? (savedDays[0].peso - savedDays[savedDays.length-1].peso).toFixed(1) : null;
   const avgC = (savedDays.reduce((s,d)=>s+d.c,0)/savedDays.length).toFixed(0);
   document.getElementById('hist-metrics').innerHTML =
@@ -610,6 +639,82 @@ async function analisarDia(){
 
   btn.disabled = false;
   btn.textContent = 'Analisar hoje';
+}
+
+async function analisarHistorico(){
+  if(!savedDays.length) return;
+
+  const mc = gv('cfg-carb') || 80, mcal = gv('cfg-cal') || 1600, mp = gv('cfg-prot') || 100, mg = gv('cfg-gord') || 80;
+  const btn = document.getElementById('btn-analisar-hist');
+  const content = document.getElementById('analise-hist-content');
+
+  btn.disabled = true;
+  btn.textContent = 'Analisando...';
+  content.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text2);font-size:13px">🤖 Analisando sua evolução...</div>';
+
+  try {
+    const r = await fetch(API + '/api/analise-historico', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ days: savedDays, metas: { carb: mc, cal: mcal, prot: mp, gord: mg } })
+    });
+    const data = await r.json();
+
+    if(data.error) throw new Error(data.error);
+
+    const tendenciaColor = data.tendencia_geral === 'positiva' ? 'var(--green)' : data.tendencia_geral === 'estável' ? '#854f0b' : '#a32d2d';
+    const tendenciaIcon = data.tendencia_geral === 'positiva' ? '📈' : data.tendencia_geral === 'estável' ? '➡️' : '⚠️';
+
+    let html = '<div style="padding:1rem">';
+
+    // Estatísticas
+    html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:1rem">';
+    html += '<div style="background:var(--bg2);padding:.7rem;border-radius:var(--radius);text-align:center">';
+    html += '<div style="font-size:11px;color:var(--text2);margin-bottom:4px">Dentro da meta</div>';
+    html += '<div style="font-size:20px;font-weight:600;color:var(--green)">' + data.stats.diasDentroMeta + '/' + data.stats.totalDias + '</div>';
+    html += '</div>';
+    html += '<div style="background:var(--bg2);padding:.7rem;border-radius:var(--radius);text-align:center">';
+    html += '<div style="font-size:11px;color:var(--text2);margin-bottom:4px">Carbo médio</div>';
+    html += '<div style="font-size:20px;font-weight:600;color:var(--text)">' + data.stats.carbMedio + 'g</div>';
+    html += '</div>';
+    html += '</div>';
+
+    // Tendência
+    html += '<div style="background:var(--bg2);padding:.9rem;border-radius:var(--radius);margin-bottom:1rem;text-align:center">';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:5px">Tendência geral</div>';
+    html += '<div style="font-size:18px;font-weight:600;color:' + tendenciaColor + '">' + tendenciaIcon + ' ' + data.tendencia_geral.charAt(0).toUpperCase() + data.tendencia_geral.slice(1) + '</div>';
+    html += '</div>';
+
+    // Conquista
+    html += '<div style="margin-bottom:1rem">';
+    html += '<div style="font-size:13px;font-weight:500;color:var(--green);margin-bottom:6px">🏆 Principal conquista</div>';
+    html += '<div style="font-size:13px;color:var(--text);line-height:1.5">' + data.principal_conquista + '</div>';
+    html += '</div>';
+
+    // Área de atenção
+    if(data.area_atencao) {
+      html += '<div style="margin-bottom:1rem">';
+      html += '<div style="font-size:13px;font-weight:500;color:var(--amber);margin-bottom:6px">👀 Precisa atenção</div>';
+      html += '<div style="font-size:13px;color:var(--text);line-height:1.5">' + data.area_atencao + '</div>';
+      html += '</div>';
+    }
+
+    // Conselho
+    html += '<div>';
+    html += '<div style="font-size:13px;font-weight:500;color:var(--purple);margin-bottom:6px">💡 Para a próxima semana</div>';
+    html += '<div style="font-size:13px;color:var(--text);line-height:1.5">' + data.conselho_semana + '</div>';
+    html += '</div>';
+
+    html += '</div>';
+    content.innerHTML = html;
+
+  } catch(e){
+    content.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--red);font-size:13px">Erro ao analisar. Tente novamente.</div>';
+    console.error(e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Analisar';
 }
 
 buildWater();

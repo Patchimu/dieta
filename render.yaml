@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: diet-tracker
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ANTHROPIC_API_KEY
+        sync: false  # Configure manualmente no painel do Render
+    disk:
+      name: diet-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
