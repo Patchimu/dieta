@@ -125,6 +125,7 @@ select:focus{border-color:var(--green)}
 
   <div class="tabs">
     <button class="tab active" onclick="showTab('hoje',this)">Hoje</button>
+    <button class="tab" onclick="showTab('analise',this)">Análise do dia</button>
     <button class="tab" onclick="showTab('metas',this)">Metas</button>
     <button class="tab" onclick="showTab('historico',this)">Histórico</button>
     <button class="tab" onclick="showTab('sugestoes',this)">Sugestões</button>
@@ -203,6 +204,19 @@ select:focus{border-color:var(--green)}
       <div class="ch"><span class="ct">Hidratação</span><span id="agua-ct" style="font-size:12px;color:var(--text2)">0 copos</span></div>
       <div class="water-grid" id="water-grid"></div>
       <div class="tr"><span class="tl">Meta</span><span class="tv">8 copos · 2L</span></div>
+    </div>
+  </div>
+
+  <!-- ANÁLISE DO DIA -->
+  <div class="sec" id="tab-analise">
+    <div class="card">
+      <div class="ch">
+        <span class="ct">Análise com IA</span>
+        <button class="btn primary" onclick="analisarDia()" id="btn-analisar">Analisar hoje</button>
+      </div>
+      <div id="analise-content" style="padding:1rem;text-align:center;color:var(--text2);font-size:13px">
+        Clique em "Analisar hoje" para receber uma análise completa do seu dia com IA.
+      </div>
     </div>
   </div>
 
@@ -506,6 +520,96 @@ function showTab(id, el){
   el.classList.add('active');
   document.getElementById('tab-'+id).classList.add('active');
   if(id==='historico') renderHistorico();
+}
+
+async function analisarDia(){
+  if(!todayFoods.length){
+    alert('Adicione alimentos ao dia antes de analisar.');
+    return;
+  }
+
+  const mc = gv('cfg-carb') || 80, mcal = gv('cfg-cal') || 1600, mp = gv('cfg-prot') || 100, mg = gv('cfg-gord') || 80;
+  const tot = {cal:0, p:0, c:0, g:0};
+  todayFoods.forEach(f => { tot.cal+=f.cal; tot.p+=f.p; tot.c+=f.c; tot.g+=f.g; });
+
+  const btn = document.getElementById('btn-analisar');
+  const content = document.getElementById('analise-content');
+
+  btn.disabled = true;
+  btn.textContent = 'Analisando...';
+  content.innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text2)"><div style="font-size:14px;margin-bottom:8px">🤖 Analisando seu dia...</div><div style="font-size:12px">A IA está avaliando suas escolhas</div></div>';
+
+  try {
+    const r = await fetch(API + '/api/analisar-dia', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        foods: todayFoods,
+        totals: tot,
+        metas: { carb: mc, cal: mcal, prot: mp, gord: mg }
+      })
+    });
+    const data = await r.json();
+
+    if(data.error) throw new Error(data.error);
+
+    const notaColor = data.nota >= 8 ? 'var(--green)' : data.nota >= 6 ? '#854f0b' : '#a32d2d';
+
+    let html = '<div style="padding:1rem">';
+
+    // Nota
+    html += '<div style="text-align:center;margin-bottom:1.5rem;padding:1rem;background:var(--bg2);border-radius:var(--radius)">';
+    html += '<div style="font-size:13px;color:var(--text2);margin-bottom:8px">Nota do dia</div>';
+    html += '<div style="font-size:48px;font-weight:700;color:' + notaColor + '">' + data.nota.toFixed(1) + '</div>';
+    html += '<div style="font-size:12px;color:var(--text3)">de 10</div>';
+    html += '</div>';
+
+    // Pontos positivos
+    if(data.pontos_positivos && data.pontos_positivos.length > 0){
+      html += '<div style="margin-bottom:1.5rem">';
+      html += '<div style="font-size:13px;font-weight:500;color:var(--green);margin-bottom:8px">✓ O que foi certo</div>';
+      data.pontos_positivos.forEach(p => {
+        html += '<div style="font-size:13px;color:var(--text);margin-bottom:6px;padding-left:1.2rem;position:relative">';
+        html += '<span style="position:absolute;left:0">•</span>' + p;
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Pontos negativos
+    if(data.pontos_negativos && data.pontos_negativos.length > 0){
+      html += '<div style="margin-bottom:1.5rem">';
+      html += '<div style="font-size:13px;font-weight:500;color:var(--red);margin-bottom:8px">✗ O que precisa melhorar</div>';
+      data.pontos_negativos.forEach(p => {
+        html += '<div style="font-size:13px;color:var(--text);margin-bottom:6px;padding-left:1.2rem;position:relative">';
+        html += '<span style="position:absolute;left:0">•</span>' + p;
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    // Sugestões
+    if(data.sugestoes && data.sugestoes.length > 0){
+      html += '<div>';
+      html += '<div style="font-size:13px;font-weight:500;color:var(--purple);margin-bottom:8px">💡 Sugestões para amanhã</div>';
+      data.sugestoes.forEach(s => {
+        html += '<div style="font-size:13px;color:var(--text);margin-bottom:6px;padding-left:1.2rem;position:relative">';
+        html += '<span style="position:absolute;left:0">•</span>' + s;
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+    content.innerHTML = html;
+
+  } catch(e){
+    content.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--red);font-size:13px">Erro ao analisar. Tente novamente.</div>';
+    console.error(e);
+  }
+
+  btn.disabled = false;
+  btn.textContent = 'Analisar hoje';
 }
 
 buildWater();

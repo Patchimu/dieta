@@ -86,6 +86,65 @@ Use tabelas TACO ou USDA para precisão.`,
   }
 });
 
+app.post('/api/analisar-dia', async (req, res) => {
+  const { foods, totals, metas } = req.body;
+  if (!foods || !totals || !metas) {
+    return res.status(400).json({ error: 'Dados incompletos' });
+  }
+
+  try {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const prompt = `Você é um nutricionista especialista em dieta low carb. Analise o dia alimentar do paciente.
+
+**Metas low carb:**
+- Carboidratos: ${metas.carb}g (máximo)
+- Calorias: ${metas.cal} kcal
+- Proteína: ${metas.prot}g
+- Gordura: ${metas.gord}g
+
+**O que foi consumido hoje:**
+- Carboidratos: ${totals.c.toFixed(1)}g
+- Calorias: ${Math.round(totals.cal)} kcal
+- Proteína: ${totals.p.toFixed(1)}g
+- Gordura: ${totals.g.toFixed(1)}g
+
+**Alimentos consumidos:**
+${foods.map(f => `- ${f.refeicao}: ${f.name} (${f.qty}) - ${Math.round(f.cal)} kcal, C:${f.c.toFixed(0)}g, P:${f.p.toFixed(0)}g, G:${f.g.toFixed(0)}g`).join('\n')}
+
+Analise este dia e responda SOMENTE com JSON válido (sem markdown, sem texto extra):
+{
+  "nota": número de 0 a 10,
+  "pontos_positivos": ["ponto 1", "ponto 2", ...],
+  "pontos_negativos": ["ponto 1", "ponto 2", ...],
+  "sugestoes": ["sugestão 1", "sugestão 2", ...]
+}
+
+Critérios para a nota:
+- 9-10: Excelente aderência low carb, macros balanceados
+- 7-8: Bom, dentro das metas com pequenos ajustes
+- 5-6: Moderado, passou um pouco das metas de carbo
+- 3-4: Ruim, excedeu significativamente os carboidratos
+- 0-2: Muito ruim, não seguiu a dieta low carb
+
+Seja objetivo, prático e encorajador. Foque em ações concretas.`;
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const text = message.content[0].text;
+    const json = JSON.parse(text.replace(/```json|```/g, '').trim());
+    res.json(json);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erro ao analisar o dia' });
+  }
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
