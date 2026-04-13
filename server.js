@@ -2,71 +2,34 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
+const db = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-const DATA_DIR = path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'tracker.json');
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Garantir que o diretório data existe
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  console.log('📁 Diretório data/ criado');
-}
-
-function readData() {
-  if (!fs.existsSync(DATA_FILE)) {
-    const initial = { config: {}, days: [] };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(initial, null, 2));
-    console.log('📄 Arquivo tracker.json inicializado');
-    return initial;
-  }
-  return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-}
-
-function writeData(data) {
-  // Backup antes de escrever (segurança extra)
-  if (fs.existsSync(DATA_FILE)) {
-    const backupFile = DATA_FILE + '.backup';
-    fs.copyFileSync(DATA_FILE, backupFile);
-  }
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-}
-
 app.get('/api/data', (req, res) => {
-  res.json(readData());
+  res.json(db.getData());
 });
 
 app.post('/api/config', (req, res) => {
-  const data = readData();
-  data.config = { ...data.config, ...req.body };
-  writeData(data);
+  const currentConfig = db.getConfig();
+  const newConfig = { ...currentConfig, ...req.body };
+  db.setConfig(newConfig);
   res.json({ ok: true });
 });
 
 app.post('/api/days', (req, res) => {
-  const data = readData();
   const day = { ...req.body, savedAt: new Date().toISOString() };
-  const existingIdx = data.days.findIndex(d => d.date === day.date);
-  if (existingIdx >= 0) {
-    data.days[existingIdx] = day;
-  } else {
-    data.days.push(day);
-  }
-  data.days.sort((a, b) => new Date(a.savedAt) - new Date(b.savedAt));
-  writeData(data);
+  db.saveDay(day);
   res.json({ ok: true });
 });
 
 app.delete('/api/days/:date', (req, res) => {
-  const data = readData();
-  data.days = data.days.filter(d => d.date !== req.params.date);
-  writeData(data);
+  db.deleteDay(req.params.date);
   res.json({ ok: true });
 });
 

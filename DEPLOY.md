@@ -58,16 +58,17 @@ Se os dados sumirem, é porque o disco persistente não foi configurado corretam
 
 ## 💾 Backup manual (opcional)
 
-O arquivo `data/tracker.json` contém todos os seus dados. Você pode:
+O banco de dados SQLite está em `data/tracker.db`. Você pode:
 
 1. Acessar o Shell do Render
-2. Fazer `cat data/tracker.json` para ver os dados
-3. Copiar e salvar como backup local
+2. Baixar o arquivo: `cat data/tracker.db > backup.db`
+3. Ou usar SQLite para consultar: `sqlite3 data/tracker.db "SELECT * FROM days"`
 
 ## 📊 O que é salvo no volume persistente
 
-- `data/tracker.json` - Todas as configurações, dias salvos e alimentos
-- `data/tracker.json.backup` - Backup automático antes de cada escrita
+- `data/tracker.db` - Banco SQLite com todas as configurações e dias
+- `data/tracker.db-wal` - Write-Ahead Log do SQLite (performance)
+- `data/tracker.db-shm` - Shared memory do SQLite
 
 ## 🆘 Problemas comuns
 
